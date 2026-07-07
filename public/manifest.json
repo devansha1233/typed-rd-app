@@ -1,0 +1,11 @@
+{
+  "name": "RD",
+  "short_name": "RD",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#1FA6D9",
+  "icons": [
+    { "src": "/icon.png", "sizes": "160x160", "type": "image/png" }
+  ]
+}
