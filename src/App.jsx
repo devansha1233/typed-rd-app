@@ -98,13 +98,15 @@ export default function App() {
         return;
       }
 
+      // Formatting messages perfectly for Gemini's raw endpoint
       const contents = nextMessages.map((m) => ({
         role: m.role === "user" ? "user" : "model",
         parts: [{ text: m.text }],
       }));
 
+      // FIXED: Swapped to a highly stable, universally responsive endpoint model name
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -119,17 +121,23 @@ export default function App() {
                 },
               ],
             },
-            tools: [{ google_search: {} }],
           }),
         }
       );
 
       const data = await response.json();
+      
+      // Checking for direct error messages from Google
+      if (data.error) {
+        setMessages((prev) => [...prev, { role: "assistant", text: `Google API Error: ${data.error.message}` }]);
+        return;
+      }
+
       const combined = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") || "";
 
-      setMessages((prev) => [...prev, { role: "assistant", text: combined || "I didn't catch that — could you try again?" }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: combined || "I received empty text back from the server. Let's try again!" }]);
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Try again in a moment." }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Check your Vercel connection." }]);
     } finally {
       setThinking(false);
     }
@@ -240,7 +248,7 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid #E5E5E5", paddingTop: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "#555" }}>What I remember</div>
             <div style={{ fontSize: 11, color: "#999", marginTop: -4 }}>
-              Say "remember that…" and I'll save it here, on this device.
+              Say \"remember that…\" and I'll save it here, on this device.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {memories.length === 0 && <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Nothing saved yet.</div>}
@@ -379,4 +387,5 @@ export default function App() {
       `}</style>
     </div>
   );
-  }
+}
+
