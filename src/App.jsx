@@ -1,13 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Plus, Bell, X, Loader2, Menu, Trash2 } from "lucide-react";
 
-// ⚠️ IMPORTANT — read before deploying:
-// This calls the Anthropic API directly from the browser using a key exposed
-// in the frontend bundle. That's fine for personal/testing use, but ANYONE
-// who opens devtools can see and use your key. For a real public app, put
-// this fetch call behind your own backend (a small serverless function that
-// holds the key server-side) instead. See: https://docs.claude.com
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+// Uses Google's Gemini API — free tier, no credit card required.
+// Get a free key at https://aistudio.google.com/apikey
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 export default function App() {
   const [messages, setMessages] = useState([
@@ -85,52 +81,51 @@ export default function App() {
     }
 
     try {
-      const apiMessages = nextMessages.map((m) => ({
-        role: m.role === "user" ? "user" : "assistant",
-        content: m.text,
-      }));
-
       const memoryContext =
         memories.length > 0
           ? `\n\nThings you know about this user from earlier: ${memories.join("; ")}`
           : "";
 
-      if (!ANTHROPIC_API_KEY) {
+      if (!GEMINI_API_KEY) {
         setMessages((prev) => [
           ...prev,
           {
             role: "assistant",
-            text: "No API key is set up yet. Add VITE_ANTHROPIC_API_KEY to your hosting environment variables to enable real replies.",
+            text: "No API key is set up yet. Add VITE_GEMINI_API_KEY to your hosting environment variables to enable real replies.",
           },
         ]);
         setThinking(false);
         return;
       }
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system:
-            "You are RD, a warm, capable personal assistant with memory and web search. If asked your name, say your name is RD. Talk naturally and concretely. You have broad general knowledge — confidently answer questions about history, historical figures (like Chhatrapati Shivaji Maharaj, Mughal emperors, or any other historical topic), geography, science, and culture directly from what you know. Use web search whenever something might be recent, time-sensitive, or you're unsure (current events, prices, weather, latest news). If the user asks what you remember about them, answer directly from the list of things you know about this user below." +
-            memoryContext,
-          messages: apiMessages,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-        }),
-      });
+      const contents = nextMessages.map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.text }],
+      }));
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: {
+              parts: [
+                {
+                  text:
+                    "You are RD, a warm, capable personal assistant with memory. If asked your name, say your name is RD. Talk naturally and concretely. You have broad general knowledge — confidently answer questions about history, historical figures (like Chhatrapati Shivaji Maharaj, Mughal emperors, or any other historical topic), geography, science, and culture directly from what you know. If the user asks what you remember about them, answer directly from the list of things you know about this user below." +
+                    memoryContext,
+                },
+              ],
+            },
+            tools: [{ google_search: {} }],
+          }),
+        }
+      );
 
       const data = await response.json();
-      const combined = (data.content || [])
-        .map((block) => (block.type === "text" ? block.text : ""))
-        .filter(Boolean)
-        .join("\n");
+      const combined = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") || "";
 
       setMessages((prev) => [...prev, { role: "assistant", text: combined || "I didn't catch that — could you try again?" }]);
     } catch (err) {
@@ -384,4 +379,4 @@ export default function App() {
       `}</style>
     </div>
   );
-        }
+  }
