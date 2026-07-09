@@ -123,9 +123,28 @@ export default function App() {
           }),
         }
       );
+const data = await response.json();
 
-      const data = await response.json();
+      if (data.error) {
+        setMessages((prev) => [...prev, { role: "assistant", text: `API Error: ${data.error.message}` }]);
+        setThinking(false);
+        return;
+      }
+
       const combined = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") || "";
+
+      if (!combined) {
+        const reason = data?.candidates?.[0]?.finishReason || "unknown";
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", text: `(No reply text — reason: ${reason}. Raw: ${JSON.stringify(data).slice(0, 300)})` },
+        ]);
+        setThinking(false);
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: "assistant", text: combined }]);
+      
 
       setMessages((prev) => [...prev, { role: "assistant", text: combined || "I didn't catch that — could you try again?" }]);
     } catch (err) {
