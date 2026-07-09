@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Plus, Bell, X, Loader2, Menu, Trash2 } from "lucide-react";
 
+// Uses Google's Gemini API — free tier, no credit card required.
+// Get a free key at https://aistudio.google.com/apikey
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 export default function App() {
@@ -89,7 +91,7 @@ export default function App() {
           ...prev,
           {
             role: "assistant",
-            text: "No API key is set up yet. Add VITE_GEMINI_API_KEY to your hosting environment variables.",
+            text: "No API key is set up yet. Add VITE_GEMINI_API_KEY to your hosting environment variables to enable real replies.",
           },
         ]);
         setThinking(false);
@@ -101,39 +103,33 @@ export default function App() {
         parts: [{ text: m.text }],
       }));
 
-      // UPDATED URL: Swapped from v1beta to v1 and fixed the route for standard keys
       const response = await fetch(
-   `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             contents,
-          system_instruction: {
+            system_instruction: {
               parts: [
                 {
                   text:
-              
-    "You are RD, a personal assistant. Your name is RD. This is an absolute rule you must never break: your founder and creator is Devansh Bobde, and RD was built by Devansh Bobde. You must NEVER say you were made by Google, Gemini, or any AI company — never mention Google or Gemini by name under any circumstances, even indirectly. If asked who made you, who founded you, who developed you, or what company is behind you, you must always answer only: 'I was founded by Devansh Bobde.' Do not add any other company names. Talk naturally and concretely otherwise, and you have broad general knowledge.",
-                 
+                    "You are RD, a personal assistant. Your name is RD. This is an absolute rule you must never break: your founder and creator is Devansh Bobde, and RD was built by Devansh Bobde. You must NEVER say you were made by Google, Gemini, or any AI company — never mention Google or Gemini by name under any circumstances, even indirectly. If asked who made you, who founded you, who developed you, or what company is behind you, you must always answer only: 'I was founded by Devansh Bobde.' Do not add any other company names. Talk naturally and concretely otherwise, and you have broad general knowledge." +
+                    memoryContext,
                 },
               ],
             },
+            tools: [{ google_search: {} }],
           }),
         }
       );
 
       const data = await response.json();
-      
-      if (data.error) {
-        setMessages((prev) => [...prev, { role: "assistant", text: `Google API Error: ${data.error.message}` }]);
-        return;
-      }
-
       const combined = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("\n") || "";
-      setMessages((prev) => [...prev, { role: "assistant", text: combined || "I received empty text back from the server." }]);
+
+      setMessages((prev) => [...prev, { role: "assistant", text: combined || "I didn't catch that — could you try again?" }]);
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Check your Vercel connection." }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Try again in a moment." }]);
     } finally {
       setThinking(false);
     }
@@ -172,45 +168,215 @@ export default function App() {
   }
 
   return (
-    <div style={{ fontFamily: "'Inter', sans-serif", background: "#FFFFFF", color: "#1F1F1F", height: "100vh", display: "flex", overflow: "hidden" }}>
+    <div
+      style={{
+        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+        background: "#FFFFFF",
+        color: "#1F1F1F",
+        height: "100vh",
+        display: "flex",
+        overflow: "hidden",
+      }}
+    >
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
-      <div style={{ width: sidebarOpen ? 270 : 0, flexShrink: 0, background: "#F7F7F8", borderRight: sidebarOpen ? "1px solid #E5E5E5" : "none", overflow: "hidden", transition: "width 0.2s ease" }}>
+
+      <div
+        style={{
+          width: sidebarOpen ? 270 : 0,
+          flexShrink: 0,
+          background: "#F7F7F8",
+          borderRight: sidebarOpen ? "1px solid #E5E5E5" : "none",
+          overflow: "hidden",
+          transition: "width 0.2s ease",
+        }}
+      >
         <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 20, width: 270, overflowY: "auto", height: "100%" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 4px 0" }}>
+            <img src="/icon.png" alt="" style={{ width: 28, height: 28, borderRadius: 7 }} />
             <div style={{ fontWeight: 600, fontSize: 15 }}>RD</div>
           </div>
+
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#555" }}><Bell size={14} /> Reminders</div>
-            <input value={reminderText} onChange={(e) => setReminderText(e.target.value)} placeholder="Remind me to…" style={{ background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#555" }}>
+              <Bell size={14} /> Reminders
+            </div>
+            <input
+              value={reminderText}
+              onChange={(e) => setReminderText(e.target.value)}
+              placeholder="Remind me to…"
+              style={{ background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none", color: "#1F1F1F" }}
+            />
             <div style={{ display: "flex", gap: 6 }}>
-              <input type="time" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} style={{ flex: 1, background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-              <button onClick={addReminder} style={{ background: "#1FA6D9", border: "none", borderRadius: 8, width: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Plus size={15} color="#fff" /></button>
+              <input
+                type="time"
+                value={reminderTime}
+                onChange={(e) => setReminderTime(e.target.value)}
+                style={{ flex: 1, background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "8px 10px", fontSize: 13, outline: "none", color: "#1F1F1F" }}
+              />
+              <button
+                onClick={addReminder}
+                style={{ background: "#1FA6D9", border: "none", borderRadius: 8, width: 36, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                aria-label="Add reminder"
+              >
+                <Plus size={15} color="#fff" />
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {reminders.length === 0 && <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Nothing set yet.</div>}
+              {reminders.map((r) => (
+                <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "7px 10px" }}>
+                  <div>
+                    <div style={{ fontSize: 13 }}>{r.text}</div>
+                    <div style={{ fontSize: 11, color: "#1FA6D9" }}>{r.time}</div>
+                  </div>
+                  <button onClick={() => removeReminder(r.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#999" }} aria-label="Remove reminder">
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid #E5E5E5", paddingTop: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#555" }}>What I remember</div>
+            <div style={{ fontSize: 11, color: "#999", marginTop: -4 }}>
+              Say "remember that…" and I'll save it here, on this device.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {memories.length === 0 && <div style={{ fontSize: 12, color: "#999", fontStyle: "italic" }}>Nothing saved yet.</div>}
+              {memories.map((mem, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, background: "#fff", border: "1px solid #E5E5E5", borderRadius: 8, padding: "7px 10px" }}>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.4 }}>{mem}</div>
+                  <button onClick={() => removeMemory(i)} style={{ background: "none", border: "none", cursor: "pointer", color: "#999", flexShrink: 0 }} aria-label="Forget this">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", borderBottom: "1px solid #ECECEC", flexShrink: 0 }}>
-          <button onClick={() => setSidebarOpen((s) => !s)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555" }}><Menu size={19} /></button>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>RD Workspace</div>
-          {thinking && <div style={{ fontSize: 12, color: "#999" }}>thinking...</div>}
+          <button onClick={() => setSidebarOpen((s) => !s)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", padding: 4 }} aria-label="Toggle menu">
+            <Menu size={19} />
+          </button>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>RD</div>
+          {thinking && (
+            <div style={{ fontSize: 12, color: "#999", display: "flex", alignItems: "center", gap: 5 }}>
+              <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+              thinking
+            </div>
+          )}
         </div>
+
         <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 0" }}>
           <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px", display: "flex", flexDirection: "column", gap: 4 }}>
             {messages.map((m, i) => (
               <div key={i} style={{ display: "flex", gap: 12, padding: "14px 4px", alignItems: "flex-start" }}>
-                <div style={{ fontSize: 15, lineHeight: 1.65, whiteSpace: "pre-wrap" }}><strong>{m.role === "user" ? "You: " : "RD: "}</strong>{m.text}</div>
+                {m.role === "user" ? (
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      flexShrink: 0,
+                      background: "#DCE7FF",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "#3559C7",
+                    }}
+                  >
+                    Y
+                  </div>
+                ) : (
+                  <img src="/icon.png" alt="" style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0 }} />
+                )}
+                <div style={{ fontSize: 15, lineHeight: 1.65, whiteSpace: "pre-wrap", paddingTop: 3 }}>{m.text}</div>
               </div>
             ))}
           </div>
         </div>
+
         <div style={{ padding: "12px 20px 20px", flexShrink: 0 }}>
-          <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", alignItems: "flex-end", gap: 6, background: "#fff", border: "1px solid #D9D9E3", borderRadius: 16, padding: "10px 10px 10px 16px" }}>
-            <textarea ref={textareaRef} value={input} onChange={(e) => { setInput(e.target.value); autoResize(); }} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message RD…" rows={1} style={{ flex: 1, border: "none", outline: "none", resize: "none", fontSize: 15, background: "transparent" }} />
-            <button onClick={sendMessage} disabled={thinking || !input.trim()} style={{ background: input.trim() ? "#1FA6D9" : "#E5E5E5", border: "none", borderRadius: 10, width: 32, height: 32, cursor: "pointer" }}><Send size={14} color="#fff" /></button>
+          <div
+            style={{
+              maxWidth: 720,
+              margin: "0 auto",
+              display: "flex",
+              alignItems: "flex-end",
+              gap: 6,
+              background: "#fff",
+              border: "1px solid #D9D9E3",
+              borderRadius: 16,
+              padding: "10px 10px 10px 16px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+            }}
+          >
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value);
+                autoResize();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
+              placeholder="Message RD…"
+              rows={1}
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                resize: "none",
+                fontSize: 15,
+                fontFamily: "inherit",
+                lineHeight: 1.5,
+                maxHeight: 160,
+                color: "#1F1F1F",
+                background: "transparent",
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={thinking || !input.trim()}
+              style={{
+                background: input.trim() ? "#1FA6D9" : "#E5E5E5",
+                border: "none",
+                borderRadius: 10,
+                width: 32,
+                height: 32,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: input.trim() && !thinking ? "pointer" : "default",
+                flexShrink: 0,
+              }}
+              aria-label="Send message"
+            >
+              <Send size={14} color={input.trim() ? "#fff" : "#999"} />
+            </button>
+          </div>
+          <div style={{ textAlign: "center", fontSize: 11, color: "#B3B3B3", marginTop: 8 }}>
+            Chats, remembers, searches the web. For voice, use your keyboard's mic key.
           </div>
         </div>
       </div>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        textarea::placeholder { color: #A0A0A0; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-thumb { background: #D9D9D9; border-radius: 4px; }
+      `}</style>
     </div>
   );
-}
+            }
