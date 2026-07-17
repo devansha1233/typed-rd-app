@@ -1,15 +1,16 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Plus, Bell, X, Loader2, Menu, Trash2 } from "lucide-react";
+import { Send, Plus, Bell, X, Loader2, Menu, Trash2, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX } from "lucide-react";
 
 // Uses Groq's free API — no credit card required, 14,400 requests/day free.
 // Get a free key at https://console.groq.com/keys
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
+const MODEL = "qwen/qwen3.6-27b"; // current multimodal model, supports text + images
 
 export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "Hey RD! I'm RD, your assistant — I can chat and remember things for you. Type a message below to get started.",
+      text: "Hey RD! I'm RD, your assistant — I can chat, see photos, listen, and remember things for you.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -19,10 +20,15 @@ export default function App() {
   const [reminderText, setReminderText] = useState("");
   const [reminderTime, setReminderTime] = useState("");
   const [memories, setMemories] = useState(["My name is RD"]);
+  const [listening, setListening] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [pendingImage, setPendingImage] = useState(null);
 
   const scrollRef = useRef(null);
   const timeoutsRef = useRef([]);
   const textareaRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -41,6 +47,44 @@ export default function App() {
     }
     return () => timeoutsRef.current.forEach((t) => clearTimeout(t));
   }, []);
+
+  useEffect(() => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+    const recognition = new SR();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setInput((prev) => (prev ? prev + " " + transcript : transcript));
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+  }, []);
+
+  function toggleListening() {
+    if (!recognitionRef.current) {
+      alert("Voice input isn't supported in this browser. Try Chrome.");
+      return;
+    }
+    if (listening) {
+      recognitionRef.current.stop();
+      setListening(false);
+    } else {
+      recognitionRef.current.start();
+      setListening(true);
+    }
+  }
+
+  function speak(text) {
+    if (!voiceOn || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.02;
+    window.speechSynthesis.speak(utter);
+  }
 
   function autoResize() {
     const el = textareaRef.current;
@@ -65,20 +109,29 @@ export default function App() {
     return null;
   }
 
+  function handleImageSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setPendingImage(reader.result);
+    reader.readAsDataURL(file);
+  }
+
   async function sendMessage() {
     const text = input.trim();
-    if (!text || thinking) return;
+    if ((!text && !pendingImage) || thinking) return;
 
-    const nextMessages = [...messages, { role: "user", text }];
+    const userMsg = { role: "user", text: text || "(sent a photo)", image: pendingImage };
+    const nextMessages = [...messages, userMsg];
     setMessages(nextMessages);
     setInput("");
+    const imageToSend = pendingImage;
+    setPendingImage(null);
     setThinking(true);
     requestAnimationFrame(autoResize);
 
     const memoryNote = extractMemoryCandidate(text);
-    if (memoryNote) {
-      saveMemories([...memories, memoryNote]);
-    }
+    if (memoryNote) saveMemories([...memories, memoryNote]);
 
     try {
       const memoryContext =
@@ -89,10 +142,7 @@ export default function App() {
       if (!GROQ_API_KEY) {
         setMessages((prev) => [
           ...prev,
-          {
-            role: "assistant",
-            text: "No API key is set up yet. Add VITE_GROQ_API_KEY to your hosting environment variables.",
-          },
+          { role: "assistant", text: "No API key is set up yet. Add VITE_GROQ_API_KEY to your hosting environment variables." },
         ]);
         setThinking(false);
         return;
@@ -101,17 +151,29 @@ export default function App() {
       const systemMessage = {
         role: "system",
         content:
-          "You are RD, a personal assistant. Your name is RD. This is an absolute rule you must never break: your founder and creator is Devansh Bobde, and RD was built by Devansh Bobde. You must NEVER say you were made by Google, Meta, Groq, or any AI company — never mention any AI company by name under any circumstances, even indirectly. If asked who made you, who founded you, who developed you, or what company is behind you, you must always answer only: 'I was founded by Devansh Bobde.' Do not add any other company names. Talk naturally and concretely otherwise, and you have broad general knowledge." +
+          "You are RD, a personal assistant. Your name is RD. This is an absolute rule you must never break: your founder and creator is Devansh Bobde, and RD was built by Devansh Bobde. You must NEVER say you were made by Google, Meta, Groq, Alibaba, Qwen, or any AI company — never mention any AI company by name under any circumstances, even indirectly. If asked who made you, who founded you, who developed you, or what company is behind you, you must always answer only: 'I was founded by Devansh Bobde.' Do not add any other company names. Talk naturally and concretely otherwise, and you have broad general knowledge." +
           memoryContext,
       };
 
       const chatMessages = [
         systemMessage,
-        ...nextMessages.map((m) => ({
+        ...nextMessages.slice(0, -1).map((m) => ({
           role: m.role === "user" ? "user" : "assistant",
           content: m.text,
         })),
       ];
+
+      if (imageToSend) {
+        chatMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: text || "What do you see in this image?" },
+            { type: "image_url", image_url: { url: imageToSend } },
+          ],
+        });
+      } else {
+        chatMessages.push({ role: "user", content: text });
+      }
 
       const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
@@ -120,7 +182,7 @@ export default function App() {
           Authorization: `Bearer ${GROQ_API_KEY}`,
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: MODEL,
           messages: chatMessages,
         }),
       });
@@ -134,9 +196,11 @@ export default function App() {
       }
 
       const combined = data?.choices?.[0]?.message?.content || "";
-      setMessages((prev) => [...prev, { role: "assistant", text: combined || "I received an empty response — try again." }]);
+      const replyText = combined || "I received an empty response — try again.";
+      setMessages((prev) => [...prev, { role: "assistant", text: replyText }]);
+      speak(replyText);
     } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Check your Vercel connection." }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: "Something went wrong reaching the model. Check your connection." }]);
     } finally {
       setThinking(false);
     }
@@ -221,31 +285,52 @@ export default function App() {
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 20px", borderBottom: "1px solid #ECECEC", flexShrink: 0 }}>
           <button onClick={() => setSidebarOpen((s) => !s)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555" }}><Menu size={19} /></button>
           <div style={{ fontWeight: 600, fontSize: 15 }}>RD</div>
-          {thinking && <div style={{ fontSize: 12, color: "#999" }}>thinking...</div>}
+          {thinking && <div style={{ fontSize: 12, color: "#999", display: "flex", alignItems: "center", gap: 5 }}><Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> thinking</div>}
+          <div style={{ flex: 1 }} />
+          <button onClick={() => setVoiceOn((v) => !v)} style={{ background: "none", border: "none", cursor: "pointer", color: voiceOn ? "#1FA6D9" : "#999" }}>
+            {voiceOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
         </div>
         <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "20px 0" }}>
           <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 20px", display: "flex", flexDirection: "column", gap: 4 }}>
             {messages.map((m, i) => (
               <div key={i} style={{ display: "flex", gap: 12, padding: "14px 4px", alignItems: "flex-start" }}>
                 {m.role === "user" ? (
-                  <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, background: "#DCE7FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#3559C7" }}>
-                    Y
-                  </div>
+                  <div style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0, background: "#DCE7FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#3559C7" }}>Y</div>
                 ) : (
                   <img src="/icon.png" alt="" style={{ width: 28, height: 28, borderRadius: 7, flexShrink: 0 }} />
                 )}
-                <div style={{ fontSize: 15, lineHeight: 1.65, whiteSpace: "pre-wrap", paddingTop: 3 }}>{m.text}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {m.image && <img src={m.image} alt="uploaded" style={{ maxWidth: 220, borderRadius: 10, border: "1px solid #E5E5E5" }} />}
+                  <div style={{ fontSize: 15, lineHeight: 1.65, whiteSpace: "pre-wrap", paddingTop: m.image ? 0 : 3 }}>{m.text}</div>
+                </div>
               </div>
             ))}
           </div>
         </div>
         <div style={{ padding: "12px 20px 20px", flexShrink: 0 }}>
-          <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", alignItems: "flex-end", gap: 6, background: "#fff", border: "1px solid #D9D9E3", borderRadius: 16, padding: "10px 10px 10px 16px" }}>
-            <textarea ref={textareaRef} value={input} onChange={(e) => { setInput(e.target.value); autoResize(); }} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder="Message RD…" rows={1} style={{ flex: 1, border: "none", outline: "none", resize: "none", fontSize: 15, background: "transparent" }} />
-            <button onClick={sendMessage} disabled={thinking || !input.trim()} style={{ background: input.trim() ? "#1FA6D9" : "#E5E5E5", border: "none", borderRadius: 10, width: 32, height: 32, cursor: "pointer" }}><Send size={14} color="#fff" /></button>
+          {pendingImage && (
+            <div style={{ maxWidth: 720, margin: "0 auto 8px", display: "flex", alignItems: "center", gap: 8 }}>
+              <img src={pendingImage} alt="preview" style={{ height: 44, borderRadius: 8, border: "1px solid #E5E5E5" }} />
+              <button onClick={() => setPendingImage(null)} style={{ background: "#F0F0F0", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 12, cursor: "pointer" }}>Remove</button>
+            </div>
+          )}
+          <div style={{ maxWidth: 720, margin: "0 auto", display: "flex", alignItems: "flex-end", gap: 6, background: "#fff", border: "1px solid #D9D9E3", borderRadius: 16, padding: "8px 8px 8px 12px" }}>
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageSelect} style={{ display: "none" }} />
+            <button onClick={() => fileInputRef.current?.click()} style={{ background: "none", border: "none", cursor: "pointer", color: "#666", padding: 6 }}>
+              <ImageIcon size={19} />
+            </button>
+            <button onClick={toggleListening} style={{ background: "none", border: "none", cursor: "pointer", color: listening ? "#EF4444" : "#666", padding: 6 }}>
+              {listening ? <MicOff size={19} /> : <Mic size={19} />}
+            </button>
+            <textarea ref={textareaRef} value={input} onChange={(e) => { setInput(e.target.value); autoResize(); }} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }} placeholder={listening ? "Listening…" : "Message RD…"} rows={1} style={{ flex: 1, border: "none", outline: "none", resize: "none", fontSize: 15, background: "transparent", padding: "6px 0" }} />
+            <button onClick={sendMessage} disabled={thinking || (!input.trim() && !pendingImage)} style={{ background: input.trim() || pendingImage ? "#1FA6D9" : "#E5E5E5", border: "none", borderRadius: 10, width: 32, height: 32, cursor: "pointer", flexShrink: 0 }}>
+              <Send size={14} color="#fff" />
+            </button>
           </div>
         </div>
       </div>
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-}
+    }
