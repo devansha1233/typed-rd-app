@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Plus, Bell, X, Loader2, Menu, Trash2, Mic, MicOff, Image as ImageIcon, Volume2, VolumeX } from "lucide-react";
 
-// Uses Groq's free API — no credit card required, 14,400 requests/day free.
-// Get a free key at https://console.groq.com/keys
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
+// Talks to our own private backend (/api/chat) instead of Groq directly,
+// so the API key never reaches the browser. See api/chat.js.
 const MODEL = "qwen/qwen3.6-27b"; // current multimodal model, supports text + images
 
 export default function App() {
@@ -139,15 +138,6 @@ export default function App() {
           ? `\n\nThings you know about this user from earlier: ${memories.join("; ")}`
           : "";
 
-      if (!GROQ_API_KEY) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", text: "No API key is set up yet. Add VITE_GROQ_API_KEY to your hosting environment variables." },
-        ]);
-        setThinking(false);
-        return;
-      }
-
       const systemMessage = {
         role: "system",
         content:
@@ -175,12 +165,9 @@ export default function App() {
         chatMessages.push({ role: "user", content: text });
       }
 
-      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      const response = await fetch("/api/chat", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${GROQ_API_KEY}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: MODEL,
           messages: chatMessages,
@@ -333,4 +320,4 @@ export default function App() {
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-    }
+  }
